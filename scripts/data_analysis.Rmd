@@ -1,0 +1,128 @@
+---
+title: "analysing_data"
+output: html_document
+date: "2023-07-13"
+---
+
+```{r setup, include=FALSE}
+
+libraries <- c("dplyr", "purrr", "readxl", "stringr", "janitor")
+
+lapply(libraries, require, character.only = T)
+
+#Let’s load the datasets:
+
+commune_level_data <- read.csv("data/commune_level_data.csv")
+country_level_data <- read.csv("data/country_level_data.csv")
+
+```
+
+```{r}
+
+get_laspeyeres <- function(dataset, start_year = "2010"){
+
+  which_dataset <- deparse(substitute(dataset)) # The first line replaces the variable dataset by its bound value (that’s what substitute() does) for example, commune_level_data, and then converts this variable name into a string (using deparse()). So when the user provides commune_level_data, which_dataset will be defined as equal to "commune_level_data". 
+
+  group_var <- if(grepl("commune", which_dataset)){
+                 quo(locality)
+               } else {
+                 NULL
+               }
+  
+# We then use this string to detect whether the data needs to be grouped or not. So if we detect the word “commune” in the which_dataset variable, we set the grouping variable to locality, if not to NULL. But you might have the following questions: why is locality given as an input to quo(), and what is quo()?
+  
+  
+  dataset %>%
+    group_by(!!group_var) %>%
+    mutate(p0 = ifelse(year == start_year,
+                       average_price_nominal_euros,
+                       NA)) %>%
+    tidyr::fill(p0, .direction = "down") %>%
+    mutate(p0_m2 = ifelse(year == start_year,
+                          average_price_m2_nominal_euros,
+                          NA)) %>%
+    tidyr::fill(p0_m2, .direction = "down") %>%
+    ungroup() %>%
+    mutate(
+      pl = average_price_nominal_euros/p0*100,
+      pl_m2 = average_price_m2_nominal_euros/p0_m2*100)
+
+}
+```
+
+```{r}
+commune_level_data <- get_laspeyeres(commune_level_data)
+country_level_data <- get_laspeyeres(country_level_data)
+
+```
+
+## Plotting
+
+The communes we want to create plots for ...
+
+```{r}
+#We are going to create a plot for 5 communes and compare the price evolution in the communes
+#to the national price evolution. Let’s first list the communes:
+
+communes <- c("Luxembourg",
+              "Esch-sur-Alzette",
+              "Mamer",
+              "Schengen",
+              "Wincrange")
+```
+
+First lets make a function for making the plots
+
+```{r}
+
+make_plot <- function(commune){
+
+  commune_data <- commune_level_data %>% 
+    filter(locality == commune)
+
+  data_to_plot <- bind_rows(
+    country_level_data,
+    commune_data
+  )
+
+  ggplot(data_to_plot) +
+    geom_line(aes(y = pl_m2,
+                  x = year,
+                  group = locality,
+                  colour = locality))
+}
+
+```
+
+```{r, results = "asis"}
+
+
+res <- lapply(communes, function(x){
+
+  knitr::knit_child(text = c(
+
+    '\n',
+    '## Plot for commune: `r x`',
+    '\n',
+    '```{r, echo = FALSE}',
+    'print(make_plot(x))',
+    '```'
+
+     ),
+     envir = environment(),
+     quiet = TRUE)
+
+})
+
+cat(unlist(res), sep = "\n")
+
+```
+
+```{r}
+# Let’s save the plots
+ggsave("plots/lux_plot.pdf", lux_plot)
+ggsave("plots/esch_plot.pdf", esch_plot)
+ggsave("plots/mamer_plot.pdf", mamer_plot)
+ggsave("plots/schengen_plot.pdf", schengen_plot)
+ggsave("plots/wincrange_plot.pdf", wincrange_plot)
+```
